@@ -137,7 +137,7 @@ export async function fetchGistConfig(logger?: any): Promise<RoutesConfig | null
     clearTimeout(timeoutId)
 
     // ⏱️ Handle timeout errors
-    if (error.name === 'AbortError') {
+    if (error instanceof Error && error.name === 'AbortError') {
       logger?.error({ timeout: timeout }, '❌ Gist fetch timeout')
       return null
     }

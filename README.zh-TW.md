@@ -43,6 +43,9 @@ cd fast-relay
 # 安裝依賴
 yarn install
 
+# 執行互動式設定精靈（推薦）
+yarn setup
+
 # 啟動開發伺服器
 yarn dev
 
@@ -50,6 +53,8 @@ yarn dev
 yarn build
 yarn start:prod
 ```
+
+> 💡 **提示：** 使用[互動式設定精靈](docs/SETUP.zh-TW.md)輕鬆配置 GitHub Gist 整合！
 
 ## 📋 配置說明
 
@@ -296,7 +301,32 @@ TARGET_URLS=https://api.example.com
 
 ## 📚 GitHub Gist 設定指南
 
-> 📖 **詳細說明請參閱[完整 Gist 設定指南](docs/GIST_SETUP.zh-TW.md)**
+> 🎯 **快速設定：** 使用[互動式設定精靈](docs/SETUP.zh-TW.md)進行引導式配置！
+>
+> 📖 **手動設定：** 參閱[完整 Gist 設定指南](docs/GIST_SETUP.zh-TW.md)了解詳細說明。
+
+### 使用精靈快速設定
+
+```bash
+# 執行互動式設定精靈
+yarn setup
+
+# 或指定語言
+yarn setup:en      # 英文
+yarn setup:zh-TW   # 繁體中文
+```
+
+精靈將引導您完成：
+- ✅ 建立 GitHub token
+- ✅ 設定您的 Gist
+- ✅ 驗證配置
+- ✅ 自動產生 `.env` 檔案
+
+**[→ 檢視設定精靈文件](docs/SETUP.zh-TW.md)**
+
+---
+
+### 手動設定
 
 ### 步驟 1：建立 Gist
 

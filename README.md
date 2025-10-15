@@ -43,6 +43,9 @@ cd fast-relay
 # Install dependencies
 yarn install
 
+# Run interactive setup wizard (recommended)
+yarn setup
+
 # Start development server
 yarn dev
 
@@ -50,6 +53,8 @@ yarn dev
 yarn build
 yarn start:prod
 ```
+
+> 💡 **Tip:** Use the [interactive setup wizard](docs/SETUP.md) to configure GitHub Gist integration easily!
 
 ## 📋 Configuration
 
@@ -295,7 +300,32 @@ TARGET_URLS=https://api.example.com
 
 ## 📚 GitHub Gist Setup Guide
 
-> 📖 **For detailed instructions, see the [complete Gist setup guide](docs/GIST_SETUP.md)**
+> 🎯 **Quick Setup:** Use the [interactive setup wizard](docs/SETUP.md) for guided configuration!
+>
+> 📖 **Manual Setup:** See the [complete Gist setup guide](docs/GIST_SETUP.md) for detailed instructions.
+
+### Quick Setup with Wizard
+
+```bash
+# Run the interactive setup wizard
+yarn setup
+
+# Or specify language
+yarn setup:en      # English
+yarn setup:zh-TW   # Traditional Chinese
+```
+
+The wizard will guide you through:
+- ✅ Creating a GitHub token
+- ✅ Setting up your Gist
+- ✅ Verifying configuration
+- ✅ Generating `.env` file automatically
+
+**[→ View Setup Wizard Documentation](docs/SETUP.md)**
+
+---
+
+### Manual Setup
 
 ### Step 1: Create a Gist
 
