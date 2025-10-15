@@ -1,32 +1,124 @@
 import Fastify from 'fastify'
 import proxy from '@fastify/http-proxy'
+import rateLimit from '@fastify/rate-limit'
+import cors from '@fastify/cors'
 import { readFileSync, existsSync, writeFileSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import 'dotenv/config'
 import { fetchGistConfig, validateConfig, saveConfigToFile } from './utils/gist-config.js'
+import { authMiddleware } from './utils/auth-middleware.js'
 import type { RoutesConfig, RouteMapping } from './types.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
+// ⚙️ Parse configuration options
+const nodeEnv = process.env.NODE_ENV || 'development'
+const bodyLimit = parseInt(process.env.BODY_LIMIT || '1048576', 10) // Default 1MB
+
+// 📊 Logger configuration (optimized for production)
 const fastify = Fastify({
-  logger: {
-    transport: {
-      target: 'pino-pretty',
-      options: {
-        translateTime: 'HH:MM:ss Z',
-        ignore: 'pid,hostname'
+  bodyLimit,
+  logger: nodeEnv === 'production'
+    ? {
+        level: 'info'
+        // Production: Use JSON format for better performance
       }
-    }
+    : {
+        // Development: Use pretty format
+        transport: {
+          target: 'pino-pretty',
+          options: {
+            translateTime: 'HH:MM:ss Z',
+            ignore: 'pid,hostname'
+          }
+        }
+      }
+})
+
+// 🌐 CORS configuration (optional)
+const corsOrigins = process.env.CORS_ORIGINS
+if (corsOrigins) {
+  const origins = corsOrigins.split(',').map(o => o.trim())
+  await fastify.register(cors, {
+    origin: origins,
+    credentials: true
+  })
+  fastify.log.info({ origins }, '🌐 CORS enabled')
+} else {
+  fastify.log.info('ℹ️  CORS not configured (CORS_ORIGINS not set)')
+}
+
+// 🚦 Rate limiting configuration (optional)
+const rateLimitMax = parseInt(process.env.RATE_LIMIT_MAX || '100', 10)
+const rateLimitWindow = process.env.RATE_LIMIT_WINDOW || '1 minute'
+
+await fastify.register(rateLimit, {
+  max: rateLimitMax,
+  timeWindow: rateLimitWindow,
+  addHeaders: {
+    'x-ratelimit-limit': true,
+    'x-ratelimit-remaining': true,
+    'x-ratelimit-reset': true
   }
 })
+fastify.log.info({ max: rateLimitMax, window: rateLimitWindow }, '🚦 Rate limiting enabled')
+
+// 🔒 Register authentication middleware (optional)
+// If API_KEYS environment variable is set, all requests will require authentication
+fastify.addHook('preHandler', authMiddleware)
 
 const port = parseInt(process.env.PORT || '8080', 10)
 const host = process.env.HOST || '0.0.0.0'
 
 // Gist sync state
 let currentConfigHash = ''
+let syncTimer: NodeJS.Timeout | null = null // ✅ Store timer for cleanup
+
+/**
+ * Validates environment variables for security issues
+ * Checks for example values, weak credentials, and proper token formats
+ */
+function validateEnvironment(): void {
+  const token = process.env.GITHUB_TOKEN
+  const apiKeys = process.env.API_KEYS
+
+  // Validate GitHub Token
+  if (token) {
+    // Check token format
+    if (!token.startsWith('ghp_') && !token.startsWith('github_pat_')) {
+      console.warn('⚠️  Warning: GITHUB_TOKEN format may be incorrect')
+    }
+
+    // Check for example/placeholder values
+    if (token.includes('your-') || token === 'ghp_xxxxxxxxxxxxx' || token.includes('example')) {
+      console.error('❌ Error: GITHUB_TOKEN is still using example value, please set a real token')
+      process.exit(1)
+    }
+  }
+
+  // Validate API Keys (if set)
+  if (apiKeys) {
+    const keys = apiKeys.split(',').map(k => k.trim())
+    for (const key of keys) {
+      if (key.length < 16) {
+        console.warn(`⚠️  Warning: API key "${key.substring(0, 4)}..." is too short, recommend at least 16 characters`)
+      }
+      if (key.includes('example') || key === 'changeme' || key === 'your-secret-api-key') {
+        console.error('❌ Error: API_KEYS contains example or insecure values')
+        process.exit(1)
+      }
+    }
+  }
+
+  // Log security status
+  if (apiKeys) {
+    console.info('🔒 API authentication is enabled')
+  } else {
+    console.info('ℹ️  API authentication is disabled (no API_KEYS set)')
+  }
+}
 
 /**
  * Initialize configuration (fetch from Gist if enabled)
@@ -88,7 +180,7 @@ function startGistSync(): NodeJS.Timeout | null {
 
   return setInterval(async () => {
     try {
-      const config = await fetchGistConfig()
+      const config = await fetchGistConfig(fastify.log) // ✅ Fix: Pass logger
       if (!config || !validateConfig(config)) {
         return
       }
@@ -215,6 +307,9 @@ function parseRoutes(): RouteMapping[] {
     responseMode: 'proxy' as const
   }))
 }
+
+// 🔒 Validate environment variables before startup
+validateEnvironment()
 
 // Initialize configuration (fetch from Gist if enabled)
 await initializeConfig()
@@ -384,17 +479,25 @@ try {
   fastify.log.info(`📍 Listening at: http://${host}:${port}`)
 
   // Start Gist sync (if enabled)
-  startGistSync()
+  syncTimer = startGistSync() // ✅ Store timer for cleanup
 } catch (err) {
   fastify.log.error(err)
   process.exit(1)
 }
 
-// Graceful shutdown
+// ✅ Graceful shutdown with cleanup
 const signals = ['SIGINT', 'SIGTERM'] as const
 for (const signal of signals) {
   process.on(signal, async () => {
     fastify.log.info(`Received ${signal} signal, preparing to shutdown...`)
+
+    // ✅ Clean up Gist sync timer
+    if (syncTimer) {
+      clearInterval(syncTimer)
+      syncTimer = null
+      fastify.log.info('🛑 Gist sync timer cleaned up')
+    }
+
     await fastify.close()
     process.exit(0)
   })

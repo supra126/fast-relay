@@ -14,6 +14,7 @@ A lightweight, flexible HTTP proxy router with dynamic configuration support via
 - 🎯 **Flexible path modes** - Append or query parameter routing
 - ⚡ **Custom responses** - Fire-and-forget async forwarding with immediate responses
 - 🛡️ **Production-ready** - Built with Fastify for high performance
+- 🔒 **Security built-in** - SSRF protection, optional API authentication, token masking
 - 📊 **Detailed logging** - Track all requests and responses
 
 ## 🎯 Use Cases
@@ -185,7 +186,63 @@ Or simple text response:
 # Server settings
 PORT=8080
 HOST=0.0.0.0
+
+# Node environment (development | production)
+# In production mode, logger uses JSON format for better performance
+NODE_ENV=development
+
+# Request body size limit in bytes (default: 1MB)
+# Adjust based on your needs. Example: 10485760 for 10MB
+BODY_LIMIT=1048576
 ```
+
+### Performance & Security
+
+```env
+# CORS configuration (optional)
+# Comma-separated list of allowed origins
+# Examples:
+#   CORS_ORIGINS=https://app.example.com
+#   CORS_ORIGINS=https://app.example.com,https://admin.example.com
+#   CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+# If not set, CORS is disabled
+# CORS_ORIGINS=
+
+# Rate limiting (default: 100 requests per minute)
+# Protects your proxy from abuse and DDoS attacks
+RATE_LIMIT_MAX=100
+RATE_LIMIT_WINDOW=1 minute
+```
+
+### Security Configuration (Optional)
+
+```env
+# API Keys authentication (optional)
+# If set, all requests (except /health) will require authentication
+# Supports single or multiple keys (comma-separated)
+# Recommended: Use strong random keys with at least 16 characters
+#
+# Examples:
+#   Single key:    API_KEYS=your-secure-api-key-here
+#   Multiple keys: API_KEYS=client1-key,client2-key,admin-key
+API_KEYS=your-secure-api-key-here
+
+# Domain whitelist for proxy targets (optional, recommended for production)
+# Prevents SSRF attacks by restricting allowed target domains
+# Supports wildcards: *.example.com will match api.example.com, app.example.com, etc.
+ALLOWED_DOMAINS=api.example.com,*.trusted-service.com
+```
+
+**Authentication Methods:**
+- `Authorization: Bearer <key>` (recommended)
+- `X-API-Key: <key>` header
+- `?api_key=<key>` query parameter (legacy, not recommended)
+
+**Security Features:**
+- 🔒 **SSRF Protection** - Automatically blocks requests to private IPs (10.x, 172.16-31.x, 192.168.x, 127.x) and cloud metadata services (169.254.x)
+- 🔑 **Optional Authentication** - Protect your proxy with API keys
+- 🎭 **Token Masking** - GitHub tokens are masked in logs to prevent leakage
+- ✅ **Environment Validation** - Checks for weak credentials and example values on startup
 
 ### GitHub Gist Configuration
 
@@ -200,6 +257,10 @@ GIST_SYNC_INTERVAL=300
 
 # Auto-restart on config changes (default: true)
 GIST_AUTO_RESTART=true
+
+# Gist fetch timeout in milliseconds (default: 10000 = 10 seconds)
+# Maximum time to wait for Gist API response before timing out
+GIST_FETCH_TIMEOUT=10000
 ```
 
 #### Option 2: Private Gist (Secure)
@@ -217,6 +278,9 @@ GIST_SYNC_INTERVAL=300
 
 # Auto-restart on config changes (default: true)
 GIST_AUTO_RESTART=true
+
+# Gist fetch timeout in milliseconds (default: 10000 = 10 seconds)
+GIST_FETCH_TIMEOUT=10000
 ```
 
 ### Legacy Configuration (Not Recommended)
@@ -230,6 +294,8 @@ TARGET_URLS=https://api.example.com
 ```
 
 ## 📚 GitHub Gist Setup Guide
+
+> 📖 **For detailed instructions, see the [complete Gist setup guide](docs/GIST_SETUP.md)**
 
 ### Step 1: Create a Gist
 
@@ -296,9 +362,46 @@ Response:
 }
 ```
 
+**Note:** Health check endpoint is always accessible without authentication.
+
 ### Proxy Routes
 
 All configured routes are automatically registered based on your `routes.json` configuration.
+
+#### Without Authentication
+
+```bash
+# If API_KEYS is not set
+curl http://localhost:8080/api/v1/users
+```
+
+#### With Authentication
+
+If `API_KEYS` environment variable is set, all routes (except `/health`) require authentication:
+
+```bash
+# Method 1: Bearer Token (recommended)
+curl -H "Authorization: Bearer your-api-key" \
+  http://localhost:8080/api/v1/users
+
+# Method 2: X-API-Key Header
+curl -H "X-API-Key: your-api-key" \
+  http://localhost:8080/api/v1/users
+
+# Method 3: Query Parameter (not recommended)
+curl http://localhost:8080/api/v1/users?api_key=your-api-key
+```
+
+#### Authentication Errors
+
+If authentication is enabled and credentials are invalid or missing:
+
+```json
+{
+  "error": "Unauthorized",
+  "message": "Invalid or missing API key"
+}
+```
 
 ## 📊 Logging
 
@@ -401,14 +504,98 @@ graph TB
     Restart --> Load[Load New Configuration]
 ```
 
+## 🔒 Security
+
+### SSRF Protection
+
+Fast Relay includes built-in protection against Server-Side Request Forgery (SSRF) attacks:
+
+**Automatically Blocked:**
+- Private IP ranges: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`
+- Localhost: `127.0.0.0/8`, `localhost`, `0.0.0.0`
+- Link-local addresses: `169.254.0.0/16` (AWS metadata service)
+- Reserved IPs: `0.0.0.0/8`, `224.0.0.0/4` (multicast)
+
+**Only Allowed:**
+- `http://` and `https://` protocols
+- Public IP addresses and domain names
+
+**Additional Protection (Optional):**
+
+Set `ALLOWED_DOMAINS` to restrict proxy targets to a whitelist:
+
+```env
+# Only allow specific domains
+ALLOWED_DOMAINS=api.example.com,webhooks.example.com
+
+# Support wildcard subdomains
+ALLOWED_DOMAINS=*.example.com,*.trusted-api.com
+```
+
+If a route configuration contains an unsafe target URL, it will be rejected on startup with an error message.
+
+### API Authentication
+
+API authentication is **optional** and disabled by default for ease of development.
+
+**Enable Authentication:**
+
+```env
+# Single API key
+API_KEYS=your-secure-random-key-here
+
+# Multiple API keys (different clients)
+API_KEYS=client1-key,client2-key,admin-key
+```
+
+**Best Practices:**
+- ✅ Use strong random keys (at least 16 characters)
+- ✅ Use Bearer token authentication in production
+- ✅ Rotate keys periodically
+- ❌ Don't use query parameters for sensitive APIs
+- ❌ Don't commit real API keys to version control
+
+### Token Masking
+
+GitHub tokens and sensitive information are automatically masked in logs:
+
+```
+# Original
+GITHUB_TOKEN=ghp_1234567890abcdefghijklmnopqrstuvwxyz
+
+# Logged as
+token: "ghp_...wxyz"
+```
+
+This prevents accidental token leakage through log files or monitoring systems.
+
+### Environment Validation
+
+On startup, the application validates environment variables:
+
+✅ **Checks for:**
+- Weak or short API keys (< 16 characters)
+- Example/placeholder values (`your-`, `example`, `changeme`, `your-secret-api-key`)
+- Incorrect GitHub token formats
+- Insecure default values
+
+❌ **Startup will fail if:**
+- Using example values in production
+- API_KEYS contains obviously insecure values
+- GITHUB_TOKEN contains placeholder values
+
 ## 🧪 Testing
 
 ```bash
 # Run development server
 yarn dev
 
-# Test a route
+# Test a route (no auth)
 curl http://localhost:8080/api/v1/test
+
+# Test with authentication
+curl -H "Authorization: Bearer your-api-key" \
+  http://localhost:8080/api/v1/test
 
 # Check health
 curl http://localhost:8080/health

@@ -14,6 +14,7 @@
 - 🎯 **靈活的路徑模式** - 支援路徑附加或查詢參數路由
 - ⚡ **自訂回應** - 即發即忘的非同步轉發，立即回應客戶端
 - 🛡️ **生產就緒** - 基於 Fastify 打造，高效能運行
+- 🔒 **內建安全性** - SSRF 防護、可選 API 認證、Token 遮罩
 - 📊 **詳細日誌** - 追蹤所有請求與回應
 
 ## 🎯 使用場景
@@ -185,7 +186,63 @@ yarn start:prod
 # 伺服器設定
 PORT=8080
 HOST=0.0.0.0
+
+# Node 環境（development | production）
+# 生產模式下，logger 使用 JSON 格式以提升效能
+NODE_ENV=development
+
+# 請求本文大小限制（bytes，預設：1MB）
+# 根據需求調整。範例：10485760 表示 10MB
+BODY_LIMIT=1048576
 ```
+
+### 效能與安全性
+
+```env
+# CORS 配置（可選）
+# 逗號分隔的允許來源清單
+# 範例：
+#   CORS_ORIGINS=https://app.example.com
+#   CORS_ORIGINS=https://app.example.com,https://admin.example.com
+#   CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+# 未設定則停用 CORS
+# CORS_ORIGINS=
+
+# 速率限制（預設：每分鐘 100 次請求）
+# 保護您的代理免受濫用和 DDoS 攻擊
+RATE_LIMIT_MAX=100
+RATE_LIMIT_WINDOW=1 minute
+```
+
+### 安全性配置（可選）
+
+```env
+# API Keys 認證（可選）
+# 設定後，所有請求（除了 /health）都需要認證
+# 支援單一或多個金鑰（逗號分隔）
+# 建議：使用至少 16 字元的強隨機金鑰
+#
+# 範例：
+#   單一金鑰：   API_KEYS=your-secure-api-key-here
+#   多個金鑰：   API_KEYS=client1-key,client2-key,admin-key
+API_KEYS=your-secure-api-key-here
+
+# 代理目標域名白名單（可選，建議用於生產環境）
+# 防止 SSRF 攻擊，限制允許的目標域名
+# 支援萬用字元：*.example.com 會匹配 api.example.com、app.example.com 等
+ALLOWED_DOMAINS=api.example.com,*.trusted-service.com
+```
+
+**認證方式：**
+- `Authorization: Bearer <key>`（推薦）
+- `X-API-Key: <key>` header
+- `?api_key=<key>` query parameter（舊版，不建議）
+
+**安全功能：**
+- 🔒 **SSRF 防護** - 自動阻擋私有 IP（10.x、172.16-31.x、192.168.x、127.x）和雲端 metadata 服務（169.254.x）
+- 🔑 **可選認證** - 使用 API keys 保護您的代理
+- 🎭 **Token 遮罩** - GitHub tokens 在日誌中自動遮罩，防止洩漏
+- ✅ **環境驗證** - 啟動時檢查弱憑證和範例值
 
 ### GitHub Gist 配置
 
@@ -200,6 +257,10 @@ GIST_SYNC_INTERVAL=300
 
 # 配置變更時自動重啟（預設：true）
 GIST_AUTO_RESTART=true
+
+# Gist API 請求超時時間（毫秒，預設：10000 = 10秒）
+# 等待 Gist API 回應的最大時間
+GIST_FETCH_TIMEOUT=10000
 ```
 
 #### 選項 2：私密 Gist（安全）
@@ -217,6 +278,10 @@ GIST_SYNC_INTERVAL=300
 
 # 配置變更時自動重啟（預設：true）
 GIST_AUTO_RESTART=true
+
+# Gist API 請求超時時間（毫秒，預設：10000 = 10秒）
+# 等待 Gist API 回應的最大時間
+GIST_FETCH_TIMEOUT=10000
 ```
 
 ### 舊版配置（不建議）
@@ -230,6 +295,8 @@ TARGET_URLS=https://api.example.com
 ```
 
 ## 📚 GitHub Gist 設定指南
+
+> 📖 **詳細說明請參閱[完整 Gist 設定指南](docs/GIST_SETUP.zh-TW.md)**
 
 ### 步驟 1：建立 Gist
 
@@ -296,9 +363,46 @@ GET /health
 }
 ```
 
+**注意：** 健康檢查端點無需認證即可存取。
+
 ### 代理路由
 
 所有配置的路由會根據您的 `routes.json` 配置自動註冊。
+
+#### 不使用認證
+
+```bash
+# 如果 API_KEYS 未設定
+curl http://localhost:8080/api/v1/users
+```
+
+#### 使用認證
+
+如果設定了 `API_KEYS` 環境變數，所有路由（除了 `/health`）都需要認證：
+
+```bash
+# 方式 1：Bearer Token（推薦）
+curl -H "Authorization: Bearer your-api-key" \
+  http://localhost:8080/api/v1/users
+
+# 方式 2：X-API-Key Header
+curl -H "X-API-Key: your-api-key" \
+  http://localhost:8080/api/v1/users
+
+# 方式 3：Query Parameter（不建議）
+curl http://localhost:8080/api/v1/users?api_key=your-api-key
+```
+
+#### 認證錯誤
+
+當認證啟用且憑證無效或缺少時：
+
+```json
+{
+  "error": "Unauthorized",
+  "message": "Invalid or missing API key"
+}
+```
 
 ## 📊 日誌記錄
 
@@ -401,14 +505,98 @@ graph TB
     Restart --> Load[載入新配置]
 ```
 
+## 🔒 安全性
+
+### SSRF 防護
+
+Fast Relay 內建伺服器端請求偽造（SSRF）攻擊防護：
+
+**自動阻擋：**
+- 私有 IP 範圍：`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`
+- 本地主機：`127.0.0.0/8`、`localhost`、`0.0.0.0`
+- Link-local 位址：`169.254.0.0/16`（AWS metadata 服務）
+- 保留 IP：`0.0.0.0/8`、`224.0.0.0/4`（多播）
+
+**僅允許：**
+- `http://` 和 `https://` 協定
+- 公開 IP 位址和域名
+
+**額外防護（可選）：**
+
+設定 `ALLOWED_DOMAINS` 以限制代理目標的白名單：
+
+```env
+# 僅允許特定域名
+ALLOWED_DOMAINS=api.example.com,webhooks.example.com
+
+# 支援萬用字元子域名
+ALLOWED_DOMAINS=*.example.com,*.trusted-api.com
+```
+
+如果路由配置包含不安全的目標 URL，將在啟動時被拒絕並顯示錯誤訊息。
+
+### API 認證
+
+API 認證為**可選**，預設停用以方便開發。
+
+**啟用認證：**
+
+```env
+# 單一 API key
+API_KEYS=your-secure-random-key-here
+
+# 多個 API keys（不同客戶端）
+API_KEYS=client1-key,client2-key,admin-key
+```
+
+**最佳實踐：**
+- ✅ 使用強隨機金鑰（至少 16 字元）
+- ✅ 在生產環境使用 Bearer token 認證
+- ✅ 定期輪換金鑰
+- ❌ 不要在敏感 API 使用查詢參數
+- ❌ 不要將真實 API keys 提交至版本控制
+
+### Token 遮罩
+
+GitHub tokens 和敏感資訊會在日誌中自動遮罩：
+
+```
+# 原始值
+GITHUB_TOKEN=ghp_1234567890abcdefghijklmnopqrstuvwxyz
+
+# 日誌中顯示為
+token: "ghp_...wxyz"
+```
+
+這可防止透過日誌檔案或監控系統意外洩漏 token。
+
+### 環境驗證
+
+啟動時，應用程式會驗證環境變數：
+
+✅ **檢查項目：**
+- 弱或短的 API keys（< 16 字元）
+- 範例/佔位符值（`your-`、`example`、`changeme`、`your-secret-api-key`）
+- 不正確的 GitHub token 格式
+- 不安全的預設值
+
+❌ **以下情況將導致啟動失敗：**
+- 在生產環境使用範例值
+- API_KEYS 包含明顯不安全的值
+- GITHUB_TOKEN 包含佔位符值
+
 ## 🧪 測試
 
 ```bash
 # 執行開發伺服器
 yarn dev
 
-# 測試路由
+# 測試路由（不使用認證）
 curl http://localhost:8080/api/v1/test
+
+# 測試路由（使用認證）
+curl -H "Authorization: Bearer your-api-key" \
+  http://localhost:8080/api/v1/test
 
 # 檢查健康狀態
 curl http://localhost:8080/health
