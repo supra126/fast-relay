@@ -1,0 +1,119 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Proxy Routes Configuration",
+  "description": "Configuration file for proxy server routes",
+  "type": "object",
+  "required": ["routes"],
+  "properties": {
+    "routes": {
+      "type": "array",
+      "description": "List of route mappings",
+      "items": {
+        "type": "object",
+        "required": ["source", "target"],
+        "properties": {
+          "source": {
+            "type": "string",
+            "description": "Source path (use /* for wildcards)",
+            "examples": [
+              "/api/v1/*",
+              "/webhook",
+              "/test/a/c"
+            ]
+          },
+          "target": {
+            "type": "string",
+            "format": "uri",
+            "description": "Target URL (full URL including protocol, domain, and path)",
+            "examples": [
+              "http://example.com/test2",
+              "https://api.backend.com",
+              "https://cdn.example.com/assets"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "description": "Route description (optional, explains the purpose of this route)",
+            "examples": [
+              "API v1 forwarding",
+              "Webhook receiver endpoint",
+              "Static assets CDN"
+            ]
+          },
+          "pathMode": {
+            "type": "string",
+            "enum": ["append", "query"],
+            "default": "append",
+            "description": "Wildcard path handling mode:\n- append: Append wildcard path to target URL (default)\n- query: Pass wildcard path as query parameter",
+            "examples": [
+              "append",
+              "query"
+            ]
+          },
+          "queryParamName": {
+            "type": "string",
+            "default": "path",
+            "description": "Query parameter name when pathMode is 'query' (defaults to 'path')",
+            "examples": [
+              "path",
+              "route",
+              "endpoint"
+            ]
+          },
+          "responseMode": {
+            "type": "string",
+            "enum": ["proxy", "custom"],
+            "default": "proxy",
+            "description": "Response mode:\n- proxy: Return target's response to client (default)\n- custom: Return custom response immediately, forward request to target asynchronously",
+            "examples": [
+              "proxy",
+              "custom"
+            ]
+          },
+          "customResponse": {
+            "type": "object",
+            "description": "Custom response content when responseMode is 'custom'",
+            "properties": {
+              "status": {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 599,
+                "default": 200,
+                "description": "HTTP status code",
+                "examples": [200, 201, 204]
+              },
+              "headers": {
+                "type": "object",
+                "description": "Custom response headers",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "examples": [
+                  {
+                    "Content-Type": "application/json",
+                    "X-Custom-Header": "value"
+                  }
+                ]
+              },
+              "body": {
+                "description": "Response content (can be object or string)",
+                "oneOf": [
+                  { "type": "object" },
+                  { "type": "string" }
+                ],
+                "examples": [
+                  { "success": true, "message": "Request received" },
+                  "OK"
+                ]
+              }
+            },
+            "required": ["status", "body"]
+          }
+        },
+        "additionalProperties": false
+      },
+      "minItems": 1
+    }
+  },
+  "additionalProperties": false
+}

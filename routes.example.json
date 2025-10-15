@@ -1,0 +1,54 @@
+{
+  "$schema": "https://raw.githubusercontent.com/supra126/fast-relay/refs/heads/main/routes.schema.json",
+  "routes": [
+    {
+      "source": "/api/v1/*",
+      "target": "https://users-api.example.com/v1",
+      "pathMode": "append",
+      "responseMode": "proxy",
+      "description": "Append mode + Proxy response - /api/v1/users/123 → https://users-api.example.com/v1/users/123 (wait and return target response)"
+    },
+    {
+      "source": "/api/v2/*",
+      "target": "https://orders-api.example.com/v2",
+      "pathMode": "query",
+      "description": "Query mode (default param name) - /api/v2/orders/123 → https://orders-api.example.com/v2?path=/orders/123"
+    },
+    {
+      "source": "/api/v3/*",
+      "target": "https://analytics-api.example.com/v3",
+      "pathMode": "query",
+      "queryParamName": "route",
+      "description": "Query mode (custom param name) - /api/v3/data → https://analytics-api.example.com/v3?route=/data"
+    },
+    {
+      "source": "/webhook/*",
+      "target": "https://webhooks.example.com/hooks",
+      "pathMode": "query",
+      "responseMode": "custom",
+      "customResponse": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "X-Request-ID": "custom-response"
+        },
+        "body": {
+          "success": true,
+          "message": "Request received and will be processed"
+        }
+      },
+      "description": "Custom response mode - Return custom response immediately, forward request to target asynchronously (Fire-and-Forget)"
+    },
+    {
+      "source": "/notify/*",
+      "target": "https://notifications.example.com/notify",
+      "pathMode": "append",
+      "responseMode": "custom",
+      "customResponse": {
+        "status": 202,
+        "body": "Accepted"
+      },
+      "description": "Custom response (simple text) - Return 202 Accepted immediately, process in background"
+    }
+  ]
+}
