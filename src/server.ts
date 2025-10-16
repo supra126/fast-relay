@@ -494,8 +494,8 @@ const routes = parseRoutes();
 fastify.log.info("🎯 Route mappings:");
 for (const route of routes) {
   if (route.pathMode === "query") {
-    // Query mode: Manually register route, use fetch for proxying
-    fastify.all(`${route.source}/*`, async (request, reply) => {
+    // Query mode: Create shared handler function
+    const queryModeHandler = async (request: any, reply: any) => {
       const [fullPath, existingQuery] = request.url.split("?");
       const wildcardPath = fullPath.replace(route.source, "");
 
@@ -831,12 +831,19 @@ for (const route of routes) {
           return reply.send({ error: "Proxy request failed" });
         }
       }
-    });
+    };
+
+    // Register both routes: exact match and wildcard
+    // 1. Exact match for /lafresh (without trailing slash)
+    fastify.all(route.source, queryModeHandler);
+
+    // 2. Wildcard match for /lafresh/* (with trailing slash and beyond)
+    fastify.all(`${route.source}/*`, queryModeHandler);
 
     const modeInfo = `[query: ${route.queryParamName}]`;
     const logMessage = route.description
-      ? `   ${route.source}/* → ${route.target} ${modeInfo} (${route.description})`
-      : `   ${route.source}/* → ${route.target} ${modeInfo}`;
+      ? `   ${route.source} & ${route.source}/* → ${route.target} ${modeInfo} (${route.description})`
+      : `   ${route.source} & ${route.source}/* → ${route.target} ${modeInfo}`;
     fastify.log.info(logMessage);
   } else {
     // Append mode: Use original approach
